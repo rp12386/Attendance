@@ -1,0 +1,961 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Worker Attendance Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#eef2f9;--card:#ffffff;--fg:#0f1b2a;--muted:#64748b;--border:#e1e8f2;
+  --header:#0b3a63;--header-fg:#f3f8fd;--header-line:#2a6699;--header-soft:#0f4a78;
+  --accent:#f7941d;--accent-fg:#2c1a05;--accent-strong:#d9720a;
+  --present:#178a53;--present-soft:#e2f6ea;--absent:#d1352f;--absent-soft:#fce6e5;
+  --leave:#b8860b;--leave-soft:#faf1d9;--holiday:#2166a3;--holiday-soft:#e3eefb;
+  --row-alt:#f6f9fd;--hover-tint:#eaf2fb;
+  --w1:150px;--w2:110px;--w3:64px;--datecol:34px;
+  --radius-sm:9px;--radius-md:14px;--radius-lg:20px;
+  --ease:cubic-bezier(.2,.7,.3,1);
+  --shadow-sm:0 2px 10px -5px rgba(11,58,99,.28);
+  --shadow-md:0 16px 36px -22px rgba(11,58,99,.5);
+  --shadow-lg:0 26px 52px -26px rgba(11,58,99,.55);
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;color:var(--fg);font-family:'Plus Jakarta Sans',ui-sans-serif,system-ui,sans-serif;padding:0 16px 60px;
+  background:
+    radial-gradient(1100px 480px at 12% -10%, rgba(11,58,99,.08), transparent 60%),
+    radial-gradient(900px 420px at 100% 0%, rgba(247,148,29,.08), transparent 55%),
+    var(--bg);
+}
+.gov-strip{height:4px;background:linear-gradient(90deg,#0b3a63 0%,#2a6699 35%,#f7941d 65%,#d9720a 100%);margin:0 -16px 26px;box-shadow:0 2px 6px -2px rgba(11,58,99,.4);border-radius:0 0 3px 3px}
+/* ---------- Admin / Viewer mode gating ---------- */
+body:not(.admin-mode) .adm-only{display:none!important}
+body.admin-mode #adminLoginBtn{display:none}
+body:not(.admin-mode) #adminLogoutBtn{display:none}
+body:not(.admin-mode) [data-edit],body:not(.admin-mode) [data-del],body:not(.admin-mode) [data-delcycle]{display:none!important}
+body:not(.admin-mode) th.actioncol,body:not(.admin-mode) td.actioncol{display:none!important}
+body:not(.admin-mode) td.cell{cursor:default!important;pointer-events:none}
+body:not(.admin-mode) .ot-chip{pointer-events:none;opacity:.28;cursor:default}
+@media print{#adminLoginBtn,#adminLogoutBtn{display:none!important}}
+::selection{background:var(--accent);color:var(--accent-fg)}
+.shell{max-width:1400px;margin:0 auto;display:flex;flex-direction:column;gap:22px;animation:riseIn .5s var(--ease)}
+@keyframes riseIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.shell{animation:none}html{scroll-behavior:auto}}
+.brand-strip{display:flex;justify-content:center;padding:6px 0 0}
+.brand-logo{height:64px;width:auto;object-fit:contain}
+@media(max-width:760px){.brand-logo{height:48px}}
+.folder-screen{padding:18px 0 10px;animation:riseIn .4s var(--ease)}
+.folder-heading{text-align:center;margin-bottom:26px}
+.folder-heading h1{margin:6px 0 6px;font-size:26px}
+.folder-sub-heading{color:var(--muted);font-size:13.5px;margin:0}
+.folder-grid{display:flex;justify-content:center;gap:22px;flex-wrap:wrap}
+.folder-card{display:flex;flex-direction:column;align-items:center;gap:6px;width:190px;padding:26px 18px 20px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);cursor:pointer;position:relative;transition:transform .18s var(--ease),box-shadow .18s var(--ease),border-color .18s var(--ease)}
+.folder-card:hover{transform:translateY(-4px);box-shadow:var(--shadow-lg);border-color:var(--accent)}
+.folder-card:active{transform:translateY(-1px) scale(.98)}
+.folder-ic{width:78px;height:64px;filter:drop-shadow(0 6px 14px rgba(11,58,99,.28))}
+.folder-emoji{font-size:26px;margin-top:-40px}
+.folder-name{font-size:16px;font-weight:700;color:var(--header);margin-top:6px}
+.folder-desc{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:600}
+@media(max-width:760px){.folder-card{width:150px;padding:20px 12px 16px}.folder-ic{width:64px;height:52px}.folder-emoji{font-size:22px;margin-top:-32px}}
+@media print{.folder-screen{display:none!important}}
+.panel{background:var(--card);border:1px solid var(--border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);overflow:hidden;transition:box-shadow .25s var(--ease)}
+.head{background:linear-gradient(155deg,var(--header) 0%,#082c4c 55%,#062843 100%);color:var(--header-fg);padding:28px 28px 24px;display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-between;position:relative;overflow:hidden}
+.head::before{content:"";position:absolute;inset:0;background:radial-gradient(460px 240px at 90% -30%,rgba(247,148,29,.22),transparent 65%);pointer-events:none}
+.head::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,rgba(247,148,29,.5),transparent)}
+.head>*{position:relative}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+h1{margin:5px 0 4px;font-size:29px;letter-spacing:-.025em;font-weight:700}
+.cycle{font-size:13px;color:#a9c1d6}
+.controls{display:flex;gap:9px;flex-wrap:wrap;align-items:center}
+.month-box{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);backdrop-filter:blur(6px);border:1px solid var(--header-line);border-radius:12px;padding:8px 12px;font-size:12px;color:#a9c1d6;transition:border-color .2s var(--ease)}
+.month-box:focus-within{border-color:var(--accent)}
+.month-box input,.month-box select{border:1px solid var(--border);border-radius:8px;padding:5px 8px;font:inherit;font-size:13px;color:var(--fg);background:var(--card);cursor:pointer;transition:box-shadow .15s var(--ease)}
+.month-box input:focus,.month-box select:focus{outline:none;box-shadow:0 0 0 3px rgba(247,148,29,.35)}
+button{font:inherit;cursor:pointer;border-radius:var(--radius-sm);padding:9px 15px;font-weight:600;font-size:13px;display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;transition:transform .15s var(--ease),box-shadow .15s var(--ease),background-color .15s var(--ease),opacity .15s var(--ease)}
+button:active{transform:translateY(1px) scale(.98)}
+button:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(247,148,29,.45)}
+.btn-accent{background:var(--accent);color:var(--accent-fg);box-shadow:0 6px 16px -8px rgba(217,114,10,.7)}
+.btn-accent:hover{background:var(--accent-strong);color:#fff;transform:translateY(-1px);box-shadow:0 10px 20px -8px rgba(217,114,10,.8)}
+.btn-outline{background:rgba(255,255,255,.04);color:var(--header-fg);border-color:var(--header-line)}
+.btn-outline:hover{background:rgba(255,255,255,.12);transform:translateY(-1px)}
+.btn-light{background:rgba(255,255,255,.08);color:var(--header-fg);border-color:var(--header-line)}
+.btn-light:hover{background:rgba(255,255,255,.16);transform:translateY(-1px);box-shadow:var(--shadow-sm)}
+.stats{display:grid;grid-template-columns:repeat(6,1fr);gap:1px;background:var(--border)}
+.stat{background:var(--card);padding:15px 16px;position:relative;transition:background-color .2s var(--ease)}
+.stat::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--border)}
+.stat:nth-child(2)::before{background:var(--present)}.stat:nth-child(3)::before{background:var(--absent)}
+.stat:nth-child(4)::before{background:var(--leave)}.stat:nth-child(5)::before{background:var(--holiday)}
+.stat:nth-child(6)::before{background:var(--accent-strong)}
+.stat:hover{background:var(--hover-tint)}
+.stat b{display:block;font-size:23px;font-variant-numeric:tabular-nums;font-weight:700;transition:transform .2s var(--ease)}
+.stat span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+.add{padding:20px 22px}
+.add h2{margin:0 0 12px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.add-grid{display:grid;grid-template-columns:2fr 1.5fr 1fr auto;gap:10px}
+input.field,select.field{width:100%;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;font:inherit;font-size:14px;background:var(--card);color:var(--fg);transition:box-shadow .15s var(--ease),border-color .15s var(--ease)}
+select.field{cursor:pointer}
+input.field:focus,select.field:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(247,148,29,.28)}
+input.field::placeholder{color:#a9afb9}
+.legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--muted);padding:16px 22px 4px}
+/* Toast — appears only when there's something to say */
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(12px);background:var(--header);color:var(--header-fg);padding:11px 20px;border-radius:12px;font-size:13px;font-weight:600;box-shadow:var(--shadow-lg);border:1px solid var(--header-line);z-index:2147483000;opacity:0;pointer-events:none;transition:opacity .25s var(--ease),transform .25s var(--ease);max-width:88vw;text-align:center}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{background:var(--absent);border-color:#a92722}
+.mark{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;font-size:12px;font-weight:700;transition:transform .12s var(--ease),box-shadow .12s var(--ease)}
+.mark.p{background:var(--present-soft);color:var(--present);border:1px solid var(--present)}
+.mark.a{background:var(--absent-soft);color:var(--absent);border:1px solid var(--absent)}
+.mark.l{background:var(--leave-soft);color:var(--leave);border:1px solid var(--leave)}
+.mark.h{background:var(--holiday-soft);color:var(--holiday);border:1px solid var(--holiday)}
+.mark.n{border:1px dashed var(--border)}
+td.cell{transition:background-color .12s var(--ease)}
+td.cell:hover{background:var(--row-alt)}
+td.cell:hover .mark{transform:scale(1.12);box-shadow:var(--shadow-sm)}
+td.cell:active .mark{transform:scale(.94)}
+.cell-inner{display:flex;flex-direction:column;align-items:center;gap:2px}
+.ot-chip{all:unset;box-sizing:border-box;cursor:pointer;display:block;min-width:24px;height:15px;line-height:15px;padding:0 3px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.01em;text-align:center;color:var(--muted);transition:background-color .15s var(--ease),color .15s var(--ease),transform .12s var(--ease)}
+.ot-chip:empty::before{content:"+";opacity:.32}
+.ot-chip:hover{background:var(--leave-soft);color:var(--accent-strong);transform:scale(1.08)}
+.ot-chip.set{background:var(--accent);color:var(--accent-fg)}
+.ot-chip.set:hover{background:var(--accent-strong);color:#fff}
+.narrow .ot-chip{min-width:19px;height:13px;line-height:13px;font-size:9.5px}
+.table-wrap{overflow-x:auto;overflow-y:auto;scrollbar-width:thin;scrollbar-color:var(--accent-strong) var(--bg)}
+.table-wrap::-webkit-scrollbar{height:9px;width:9px}
+.table-wrap::-webkit-scrollbar-track{background:var(--bg)}
+.table-wrap::-webkit-scrollbar-thumb{background:#a9c2d8;border-radius:20px}
+.table-wrap::-webkit-scrollbar-thumb:hover{background:var(--header)}
+table{border-collapse:separate;border-spacing:0;width:100%;table-layout:fixed;font-size:12px}
+tbody tr{transition:background-color .12s var(--ease)}
+tbody tr:hover td{background:var(--hover-tint)}
+tbody tr:hover td:nth-child(1),tbody tr:hover td:nth-child(2),tbody tr:hover td:nth-child(3){background:var(--hover-tint)}
+th,td{border-right:1px solid var(--border);border-bottom:1px solid var(--border);white-space:nowrap;padding:6px 4px;overflow:hidden}
+thead th{position:sticky;top:0;background:var(--header);color:var(--header-fg);font-size:11px;text-align:center;border-color:var(--header-line);z-index:2}
+thead th.sun{background:var(--header-soft)}
+thead th span{display:block;font-size:8px;font-weight:600;color:var(--accent);margin-bottom:1px;letter-spacing:.02em}
+th.left,td.left{text-align:left;padding-left:8px}
+tbody tr:nth-child(even){background:var(--row-alt)}
+/* Freeze the first three columns so worker name/rate stay visible without scrolling */
+th:nth-child(1),td:nth-child(1){position:sticky;left:0;width:var(--w1);min-width:var(--w1);max-width:var(--w1);text-overflow:ellipsis;background:var(--card);z-index:1}
+td:nth-child(1){white-space:normal;word-break:break-word;vertical-align:middle;line-height:1.25}
+th:nth-child(2),td:nth-child(2){position:sticky;left:var(--w1);width:var(--w2);min-width:var(--w2);max-width:var(--w2);background:var(--card);z-index:1}
+td:nth-child(2){white-space:normal;word-break:break-word;line-height:1.25;vertical-align:middle}
+th:nth-child(3),td:nth-child(3){position:sticky;left:calc(var(--w1) + var(--w2));width:var(--w3);min-width:var(--w3);max-width:var(--w3);background:var(--card);z-index:1;border-right:2px solid var(--accent-strong)}
+thead th:nth-child(1),thead th:nth-child(2),thead th:nth-child(3){background:var(--header);z-index:3}
+tbody tr:nth-child(even) td:nth-child(1),tbody tr:nth-child(even) td:nth-child(2),tbody tr:nth-child(even) td:nth-child(3){background:var(--row-alt)}
+tfoot td:nth-child(1),tfoot td:nth-child(2),tfoot td:nth-child(3){background:var(--header);z-index:3}
+th.date,td.date{width:var(--datecol);min-width:var(--datecol);max-width:var(--datecol)}
+th.cnt,td.cnt{width:26px;min-width:26px;max-width:26px}
+th.otcnt,td.otcnt{width:34px;min-width:34px;max-width:34px;color:var(--accent-strong);font-weight:700}
+th.actioncol,td.actioncol{width:56px;min-width:56px;max-width:56px}
+td.rate{text-align:right;font-variant-numeric:tabular-nums;padding-right:8px}
+td.cell{cursor:pointer;text-align:center;padding:3px}
+td.p{color:var(--present);font-weight:700;text-align:center}
+td.a{color:var(--absent);font-weight:700;text-align:center}
+td.l{color:var(--leave);font-weight:700;text-align:center}
+td.h{color:var(--holiday);font-weight:700;text-align:center}
+.icon-btn{background:transparent;border:none;padding:3px;color:var(--muted);border-radius:8px;font-size:13px;transition:background-color .15s var(--ease),transform .15s var(--ease)}
+.icon-btn:hover{background:var(--hover-tint);transform:translateY(-1px)}
+.icon-btn.danger{color:var(--absent)}
+tfoot td{background:var(--header);color:var(--header-fg);font-weight:700;text-align:center;border-color:var(--header-line)}
+.empty{padding:56px 20px;text-align:center;color:var(--muted);border:1px dashed var(--border);border-radius:18px;background:var(--card)}
+.empty .empty-ic{font-size:30px;display:block;margin-bottom:10px;opacity:.7}
+dialog{border:1px solid var(--border);border-radius:var(--radius-lg);padding:24px;max-width:420px;width:92%;background:var(--card);color:var(--fg);box-shadow:var(--shadow-lg)}
+dialog[open]{animation:dlgIn .18s var(--ease)}
+@keyframes dlgIn{from{opacity:0;transform:translateY(10px) scale(.98)}to{opacity:1;transform:translateY(0) scale(1)}}
+dialog::backdrop{background:rgba(20,24,32,.55);backdrop-filter:blur(2px)}
+dialog label{display:block;font-size:13px;color:var(--muted);margin-bottom:10px}
+dialog .row{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+.btn-quiet{background:var(--row-alt);color:var(--fg);border-color:var(--border)}
+.btn-quiet:hover{background:var(--hover-tint)}
+.search-box{position:relative;margin-bottom:14px}
+.search-box input{width:100%;border:1px solid var(--border);border-radius:10px;padding:9px 12px 9px 32px;font:inherit;font-size:13px;background:var(--bg);color:var(--fg);transition:box-shadow .15s var(--ease),border-color .15s var(--ease)}
+.search-box input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(247,148,29,.28)}
+.search-box::before{content:"🔍";position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:12px;opacity:.6;pointer-events:none}
+.sync-badge{display:none!important;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:8px 12px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid var(--header-line);color:#a9c1d6;cursor:pointer;transition:background-color .15s var(--ease),transform .15s var(--ease)}
+.sync-badge:hover{background:rgba(255,255,255,.14);transform:translateY(-1px)}
+.sync-badge .dot{width:7px;height:7px;border-radius:50%;background:#8896a6;flex-shrink:0}
+.sync-badge.ok .dot{background:#4fd17a}
+.sync-badge.busy .dot{background:var(--accent);animation:dotPulse 1s ease-in-out infinite}
+.sync-badge.err .dot{background:#ff6b63}
+.sync-badge.off .dot{background:#8896a6}
+@keyframes dotPulse{0%,100%{opacity:1}50%{opacity:.35}}
+.ot-popover{position:fixed;z-index:80;background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-lg);padding:16px;width:232px;animation:dlgIn .15s var(--ease)}
+.ot-pop-head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:12px}
+.ot-pop-worker{font-weight:700;font-size:13px;line-height:1.3}
+.ot-pop-date{font-size:11px;color:var(--muted);margin-top:2px}
+.ot-pop-quick{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px}
+.ot-chip-btn{font:inherit;font-size:11px;font-weight:700;padding:6px 10px;border-radius:8px;border:1px solid var(--border);background:var(--row-alt);color:var(--fg);cursor:pointer;transition:background-color .15s var(--ease),border-color .15s var(--ease),transform .12s var(--ease)}
+.ot-chip-btn:hover{border-color:var(--accent-strong);background:#fff;transform:translateY(-1px)}
+.ot-chip-btn.active{background:var(--accent);border-color:var(--accent-strong);color:var(--accent-fg)}
+.ot-pop-input{display:flex;align-items:center;gap:8px;background:var(--row-alt);border:1px solid var(--border);border-radius:12px;padding:5px 6px}
+.ot-pop-input input{flex:1;width:0;border:none;background:transparent;text-align:center;font:inherit;font-size:17px;font-weight:700;color:var(--fg)}
+.ot-pop-input input:focus{outline:none}
+.ot-pop-unit{font-size:11px;color:var(--muted);padding-right:2px}
+.ot-step{width:28px;height:28px;flex-shrink:0;border-radius:8px;border:1px solid var(--border);background:#fff;font-size:16px;font-weight:700;color:var(--accent-strong);cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background-color .15s var(--ease),transform .12s var(--ease)}
+.ot-step:hover{background:var(--leave-soft);transform:translateY(-1px)}
+.ot-step:active{transform:scale(.94)}
+@media(max-width:760px){.ot-popover{width:206px}}
+.narrow thead th span{font-size:6.5px}
+.narrow .mark{width:20px;height:20px;font-size:10px;border-radius:5px}
+@media(max-width:760px){.stats{grid-template-columns:repeat(3,1fr)}.add-grid{grid-template-columns:1fr}h1{font-size:24px}}
+@media print{
+  .controls,.add,.legend,dialog,.toast,.sync-badge{display:none!important}
+  body{background:#fff;padding:0}
+  @page{size:landscape;margin:8mm}
+  .shell{max-width:none;gap:8px}
+  #registerScreen{display:block!important}
+  .panel{box-shadow:none;border:none;border-radius:0}
+  .brand-strip{display:flex!important;justify-content:center;padding:0 0 4px}
+  .table-wrap{overflow:visible!important}
+  table{table-layout:auto;width:100%;font-size:9px}
+  th,td{padding:2px 2px;white-space:normal}
+  thead th{position:static!important}
+  th:nth-child(1),td:nth-child(1),th:nth-child(2),td:nth-child(2),th:nth-child(3),td:nth-child(3){
+    position:static!important;width:auto;min-width:0;max-width:none;
+  }
+  th.date,td.date{width:auto;min-width:16px}
+  th.actioncol,td.actioncol{display:none!important}
+  .stats{grid-template-columns:repeat(6,1fr)}
+  /* Without this, browsers treat <tfoot> as a repeating page footer and print
+     the Total row on every page. table-row-group makes it a normal part of
+     the table flow, so it only prints once, right after the last worker row. */
+  tfoot{display:table-row-group}
+  tfoot tr{page-break-inside:avoid;break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="gov-strip"></div>
+  <div class="brand-strip">
+    <svg class="brand-logo" viewBox="0 0 460 110" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Govind Construction">
+      <defs>
+        <linearGradient id="gcRing" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#f7941d"/>
+          <stop offset="1" stop-color="#d9720a"/>
+        </linearGradient>
+      </defs>
+      <circle cx="55" cy="55" r="50" fill="#0b3a63"/>
+      <circle cx="55" cy="55" r="50" fill="none" stroke="url(#gcRing)" stroke-width="4"/>
+      <path d="M30 78 L30 46 L40 46 L40 38 L48 38 L48 30 L62 30 L62 40 L70 40 L70 46 L80 46 L80 78 Z" fill="#eef6fc"/>
+      <rect x="36" y="52" width="7" height="7" fill="#0b3a63"/>
+      <rect x="47" y="52" width="7" height="7" fill="#0b3a63"/>
+      <rect x="58" y="52" width="7" height="7" fill="#0b3a63"/>
+      <rect x="69" y="52" width="7" height="7" fill="#0b3a63"/>
+      <rect x="36" y="64" width="7" height="7" fill="#0b3a63"/>
+      <rect x="47" y="64" width="7" height="7" fill="#0b3a63"/>
+      <rect x="58" y="64" width="7" height="7" fill="#0b3a63"/>
+      <rect x="69" y="64" width="7" height="7" fill="#0b3a63"/>
+      <path d="M60 12 L45 46 L56 46 L48 78 L76 40 L63 40 Z" fill="#f7941d" stroke="#0b3a63" stroke-width="1.5" stroke-linejoin="round"/>
+      <text x="128" y="52" font-family="'Plus Jakarta Sans',ui-sans-serif,sans-serif" font-size="34" font-weight="700" fill="#0b3a63" letter-spacing="1">GOVIND</text>
+      <text x="128" y="80" font-family="'Plus Jakarta Sans',ui-sans-serif,sans-serif" font-size="22" font-weight="600" fill="#d9720a" letter-spacing="2">CONSTRUCTION</text>
+      <text x="128" y="97" font-family="'Plus Jakarta Sans',ui-sans-serif,sans-serif" font-size="10" font-weight="600" fill="#5b6b7c" letter-spacing="2.5">WIRED FOR EXCELLENCE</text>
+    </svg>
+  </div>
+  <div id="folderScreen" class="folder-screen">
+    <div class="folder-heading">
+      <div class="eyebrow">Govind Construction</div>
+      <h1>Select Department</h1>
+      <p class="folder-sub-heading">Open a department folder to view its attendance register.</p>
+    </div>
+    <div class="folder-grid">
+      <button class="folder-card" id="folderLighting" data-dept="lighting">
+        <svg class="folder-ic" viewBox="0 0 64 52" xmlns="http://www.w3.org/2000/svg"><path d="M2 10c0-3.3 2.7-6 6-6h14l6 6h28c3.3 0 6 2.7 6 6v30c0 3.3-2.7 6-6 6H8c-3.3 0-6-2.7-6-6V10z" fill="var(--accent)"/><path d="M2 18h60v24c0 3.3-2.7 6-6 6H8c-3.3 0-6-2.7-6-6V18z" fill="var(--accent-strong)"/></svg>
+        <span class="folder-emoji">💡</span>
+        <span class="folder-name">Lighting</span>
+        <span class="folder-desc">Attendance Register</span>
+      </button>
+      <button class="folder-card" id="folderCabling" data-dept="cabling">
+        <svg class="folder-ic" viewBox="0 0 64 52" xmlns="http://www.w3.org/2000/svg"><path d="M2 10c0-3.3 2.7-6 6-6h14l6 6h28c3.3 0 6 2.7 6 6v30c0 3.3-2.7 6-6 6H8c-3.3 0-6-2.7-6-6V10z" fill="var(--accent)"/><path d="M2 18h60v24c0 3.3-2.7 6-6 6H8c-3.3 0-6-2.7-6-6V18z" fill="var(--accent-strong)"/></svg>
+        <span class="folder-emoji">🔌</span>
+        <span class="folder-name">Cabling</span>
+        <span class="folder-desc">Attendance Register</span>
+      </button>
+    </div>
+  </div>
+
+  <div id="registerScreen" style="display:none">
+    <div class="panel">
+    <div class="head">
+      <div>
+        <div class="eyebrow">Payroll · 26th to 25th cycle</div>
+        <h1 id="mainTitle">Worker Attendance Register</h1>
+        <div class="cycle" id="cycleLabel"></div>
+      </div>
+      <div class="controls">
+        <button class="btn-light" id="backToFoldersBtn">📁 Departments</button>
+        <label class="month-box">Month
+          <select id="monthSelect"></select>
+          <select id="yearSelect"></select>
+        </label>
+        <span class="sync-badge off" id="syncBadge" title="Google Sheet sync status — click to connect/manage"><span class="dot"></span><span id="syncBadgeText">Sheet: not connected</span></span>
+        <button class="btn-accent" id="adminLoginBtn">🔑 Admin Login</button>
+        <button class="btn-light" id="adminLogoutBtn" style="display:none">🚪 Logout</button>
+        <button class="btn-accent adm-only" id="saveBtn">💾 Save</button>
+        <button class="btn-light" id="excelBtn">📊 Export Excel</button>
+        <button class="btn-outline" onclick="window.print()">🖨 Print</button>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b id="sWorkers">0</b><span>Workers</span></div>
+      <div class="stat"><b id="sPresent" style="color:var(--present)">0</b><span>Present</span></div>
+      <div class="stat"><b id="sAbsent" style="color:var(--absent)">0</b><span>Absent</span></div>
+      <div class="stat"><b id="sLeave" style="color:var(--leave)">0</b><span>Leave</span></div>
+      <div class="stat"><b id="sHoliday" style="color:var(--holiday)">0</b><span>Holiday</span></div>
+      <div class="stat"><b id="sOT" style="color:var(--accent-strong)">0</b><span>OT Hrs</span></div>
+    </div>
+  </div>
+
+  <div class="panel add adm-only">
+    <h2 id="addWorkerHeading">Add a worker (saved for every month)</h2>
+    <div class="add-grid">
+      <input class="field" id="nName" placeholder="Full name">
+      <input class="field" id="nDesig" placeholder="Designation / Shift (e.g. Mason - G)">
+      <input class="field" id="nRate" type="number" min="0" placeholder="Daily rate ₹">
+      <button class="btn-accent" id="addBtn">+ Add</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span class="mark p">P</span> Present</span>
+    <span><span class="mark a">A</span> Absent</span>
+    <span><span class="mark l">L</span> Leave</span>
+    <span><span class="mark h">H</span> Holiday</span>
+    <label class="search-box" style="margin:0;min-width:200px;flex:1;max-width:260px">
+      <input id="workerSearch" placeholder="Search worker or designation…" autocomplete="off">
+    </label>
+  </div>
+
+  <div id="emptyState" class="empty"><span class="empty-ic">🧑‍🔧</span>No workers yet. Add your first worker above — the list stays saved for every month.</div>
+
+  <div class="panel table-wrap" id="tableWrap" style="display:none">
+    <table>
+      <thead><tr id="headRow"></tr></thead>
+      <tbody id="tbody"></tbody>
+      <tfoot><tr id="footRow"></tr></tfoot>
+    </table>
+  </div>
+  </div>
+</div>
+
+<dialog id="editDlg">
+  <h3 style="margin:0 0 14px">Edit worker</h3>
+  <label>Name<input class="field" id="eName"></label>
+  <label>Designation / Shift<input class="field" id="eDesig" placeholder="e.g. Mason - G"></label>
+  <label>Daily rate ₹<input class="field" id="eRate" type="number" min="0"></label>
+  <div class="row">
+    <button class="btn-quiet" id="eCancel">Cancel</button>
+    <button class="btn-accent" id="eSave">Save changes</button>
+  </div>
+</dialog>
+
+<dialog id="pwDlg" style="max-width:380px">
+  <h3 id="pwDlgTitle" style="margin:0 0 6px;color:var(--header);display:flex;align-items:center;gap:8px">🔒 Admin Login</h3>
+  <p id="pwDlgMsg" style="font-size:12.5px;color:var(--muted);margin:0 0 14px;line-height:1.55">Enter the Admin password to continue.</p>
+  <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px" id="pwLabel1">Password</label>
+  <input class="field" id="pwInput1" type="password" placeholder="Password" autocomplete="off" style="margin-bottom:10px">
+  <div id="pwError" style="font-size:12.5px;color:var(--absent);min-height:16px;margin-bottom:2px"></div>
+  <div class="row">
+    <button class="btn-quiet" id="pwCancel">Cancel</button>
+    <button class="btn-accent" id="pwSubmit">Confirm</button>
+  </div>
+</dialog>
+
+<dialog id="sheetDlg" style="max-width:460px">
+  <h3 style="margin:0 0 6px;color:var(--header);display:flex;align-items:center;gap:8px">🔗 Connect Google Sheet</h3>
+  <p style="font-size:12.5px;color:var(--muted);margin:0 0 14px;line-height:1.55">Paste the Google Apps Script Web App URL here (see setup steps). Once connected, every save automatically writes to your Google Sheet, and the register also loads its data from the Sheet — so the same attendance is visible on the website and in Sheets, from any device.</p>
+  <label style="display:block;font-size:13px;color:var(--muted);margin-bottom:6px">Web App URL</label>
+  <input class="field" id="sheetUrlInput" type="url" placeholder="https://script.google.com/macros/s/AKf.../exec" style="margin-bottom:10px">
+  <div id="sheetDlgMsg" style="font-size:12.5px;color:var(--muted);min-height:32px;margin-bottom:2px;line-height:1.5"></div>
+  <div class="row">
+    <button class="btn-quiet" id="sheetDisconnect">Disconnect</button>
+    <button class="btn-quiet" id="sheetCancel">Cancel</button>
+    <button class="btn-accent" id="sheetSave">Save &amp; Test</button>
+  </div>
+</dialog>
+
+<div id="otPopover" class="ot-popover" style="display:none">
+  <div class="ot-pop-head">
+    <div>
+      <div class="ot-pop-worker" id="otPopWorker"></div>
+      <div class="ot-pop-date" id="otPopDate"></div>
+    </div>
+    <button class="icon-btn" id="otPopClose" title="Close">✕</button>
+  </div>
+  <div class="ot-pop-quick" id="otPopQuick"></div>
+  <div class="ot-pop-input">
+    <button class="ot-step" id="otMinus" type="button">−</button>
+    <input type="number" id="otHoursInput" min="0" max="24" step="0.5" value="0">
+    <span class="ot-pop-unit">hrs</span>
+    <button class="ot-step" id="otPlus" type="button">+</button>
+  </div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn-quiet" id="otClearBtn">Clear</button>
+    <button class="btn-accent" id="otSaveBtn">Save</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+(function(){
+  const DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  const STATES=["P","A","L","H"];
+  const DK="attendance.dept";
+  let dept="lighting";
+  try{dept=localStorage.getItem(DK)||"lighting";}catch(_){dept="lighting";}
+  const WK=()=>"attendance.workers."+dept, aK=c=>"attendance.cycle."+dept+"."+c;
+  const $=id=>document.getElementById(id);
+  const money=n=>"₹"+(Number(n)||0).toLocaleString("en-IN");
+  const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+  const SHIFT_NAMES={G:"General",M:"Morning",E:"Evening",N:"Night"};
+  function shiftLabel(code){
+    const raw=String(code||"").trim();
+    if(!raw)return"—";
+    // Whole field is just a bare code, e.g. "G"
+    const bare=SHIFT_NAMES[raw.toUpperCase()];
+    if(bare)return bare;
+    // Combined "Role - Code" format, e.g. "Mason - G" (matches the field's own placeholder)
+    const m=raw.match(/^(.*)-\s*([GMEN])$/i);
+    if(m&&m[1].trim())return m[1].trim()+" — "+SHIFT_NAMES[m[2].toUpperCase()];
+    return raw;
+  }
+  const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  const fmt=d=>d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+  const deptLabel=d=>d==="cabling"?"Cabling":"Lighting";
+
+  // ---------- Toast status (replaces the old always-on status line) ----------
+  let toastTimer=null;
+  function setStatus(msg,isErr){
+    const t=$("toast");
+    t.textContent=msg;
+    t.classList.toggle("err",!!isErr);
+    t.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer=setTimeout(()=>t.classList.remove("show"),isErr?4200:2600);
+  }
+
+  let workers=[], att={}, cycle="", dates=[], editId=null, workerFilter="";
+
+  // ---------- Google Sheet sync ----------
+  // The site still works fully offline on localStorage (as before). If a Google Apps
+  // Script "Web App" URL is connected below, every save also pushes to the Sheet, and
+  // opening a department/month first tries to PULL the latest from the Sheet (falling
+  // back to the local copy if there's no signal). That's how the same data ends up
+  // visible both on the website and inside the Google Sheet.
+  const SHEET_URL_KEY="attendance.sheetUrl";
+  const getSheetUrl=()=>{try{return(localStorage.getItem(SHEET_URL_KEY)||"").trim();}catch(_){return"";}};
+  const hasSheet=()=>!!getSheetUrl();
+  let syncTimer=null, syncBusy=false;
+
+  function setSyncBadge(state,text){
+    const b=$("syncBadge");
+    b.className="sync-badge "+state;
+    $("syncBadgeText").textContent=text;
+  }
+  function refreshSyncBadgeIdle(){
+    if(!hasSheet())setSyncBadge("off","Sheet: not connected");
+    else setSyncBadge("ok","Sheet: connected");
+  }
+
+  async function sheetCall(payload){
+    const url=getSheetUrl();
+    if(!url)throw new Error("no-url");
+    const res=await fetch(url,{method:"POST",body:JSON.stringify(payload)});
+    const data=await res.json();
+    if(!data||data.ok!==true)throw new Error((data&&data.error)||"bad-response");
+    return data;
+  }
+
+  // Push the currently-open department+cycle (workers + attendance + a readable table
+  // for the Sheet tab) to Google Sheets. Debounced so rapid attendance taps don't fire
+  // a request per tap.
+  function queueSheetPush(){
+    if(!hasSheet())return;
+    clearTimeout(syncTimer);
+    setSyncBadge("busy","Sheet: syncing…");
+    syncTimer=setTimeout(doSheetPush,900);
+  }
+  async function doSheetPush(){
+    if(!hasSheet())return;
+    if(syncBusy){syncTimer=setTimeout(doSheetPush,900);return;}
+    syncBusy=true;
+    setSyncBadge("busy","Sheet: syncing…");
+    try{
+      const table=buildTable();
+      await sheetCall({action:"sync",dept,cycle,cycleTitle:cycleTitle(cycle),workers,attendance:att,table});
+      setSyncBadge("ok","Sheet: synced ✓");
+    }catch(err){
+      console.error("Sheet push failed:",err);
+      setSyncBadge("err","Sheet: sync failed");
+      setStatus("Could not reach the Google Sheet — kept locally, will retry.",true);
+    }finally{syncBusy=false;}
+  }
+
+  // Pull the latest workers + attendance for a department/cycle from the Sheet.
+  // Returns true if it applied Sheet data, false if it fell back to local data.
+  async function pullFromSheet(d,c){
+    if(!hasSheet())return false;
+    setSyncBadge("busy","Sheet: loading…");
+    try{
+      const data=await sheetCall({action:"load",dept:d,cycle:c});
+      if(Array.isArray(data.workers)){
+        workers=data.workers;
+        try{localStorage.setItem("attendance.workers."+d,JSON.stringify(workers));}catch(_){}
+      }
+      if(data.attendance&&typeof data.attendance==="object"){
+        att=data.attendance;
+        try{localStorage.setItem(aK(c),JSON.stringify(att));}catch(_){}
+      }
+      setSyncBadge("ok","Sheet: synced ✓");
+      return true;
+    }catch(err){
+      console.error("Sheet pull failed:",err);
+      setSyncBadge("err","Sheet: offline (using local copy)");
+      return false;
+    }
+  }
+
+  function openSheetDlg(){
+    $("sheetUrlInput").value=getSheetUrl();
+    $("sheetDlgMsg").textContent=hasSheet()?"Currently connected. Paste a new URL to switch, or Disconnect to go local-only again.":"Not connected yet — attendance is only saved on this device/browser.";
+    $("sheetDlgMsg").style.color="var(--muted)";
+    if(!$("sheetDlg").open)$("sheetDlg").showModal();
+    setTimeout(()=>$("sheetUrlInput").focus(),50);
+  }
+  $("syncBadge").addEventListener("click",()=>{
+    if(!requireAdmin("Connecting Google Sheet"))return;
+    openSheetDlg();
+  });
+  $("sheetCancel").onclick=()=>$("sheetDlg").close();
+  $("sheetDlg").addEventListener("cancel",e=>{e.preventDefault();$("sheetDlg").close();});
+  $("sheetDisconnect").onclick=()=>{
+    try{localStorage.removeItem(SHEET_URL_KEY);}catch(_){}
+    refreshSyncBadgeIdle();
+    $("sheetDlg").close();
+    setStatus("Disconnected from Google Sheet — back to local-only saving.");
+  };
+  $("sheetSave").onclick=async()=>{
+    const url=$("sheetUrlInput").value.trim();
+    if(!url){$("sheetDlgMsg").textContent="Paste the Web App URL first.";$("sheetDlgMsg").style.color="var(--absent)";return;}
+    $("sheetDlgMsg").textContent="Testing connection…";$("sheetDlgMsg").style.color="var(--muted)";
+    const prevUrl=getSheetUrl();
+    try{localStorage.setItem(SHEET_URL_KEY,url);}catch(_){}
+    try{
+      await sheetCall({action:"ping"});
+      $("sheetDlgMsg").textContent="Connected ✓ Pushing current data to the Sheet…";
+      $("sheetDlgMsg").style.color="var(--present)";
+      refreshSyncBadgeIdle();
+      await doSheetPush();
+      setStatus("Connected to Google Sheet ✓");
+      setTimeout(()=>$("sheetDlg").close(),700);
+    }catch(err){
+      try{if(prevUrl)localStorage.setItem(SHEET_URL_KEY,prevUrl);else localStorage.removeItem(SHEET_URL_KEY);}catch(_){}
+      $("sheetDlgMsg").textContent="Could not connect. Check the URL and that the Web App is deployed with access \"Anyone\", then try again.";
+      $("sheetDlgMsg").style.color="var(--absent)";
+      refreshSyncBadgeIdle();
+    }
+  };
+
+  // ---------- Admin password: one fixed password, built into the site, same on every device ----------
+  // (Previously each browser/device had to CREATE its own password the first time it was used —
+  // that's why it kept asking to set a password "again": every new device had no saved password
+  // and treated you as a brand-new admin. Now there's a single fixed password for everyone, so it
+  // only ever asks you to enter it — never to set one up.)
+  const ADMIN_PW_HASH="f2fa5a002e57f8360f6a6ff9be681383430f69e0ca7672e710ce0abcf76a2106"; // sha256("LIGHT@2026")
+  async function sha256Hex(str){
+    const buf=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+  }
+  let pwPendingResolve=null;
+  let pwPendingPromise=null;
+  let pwChecking=false;
+  function openPwDlg(){
+    // Already asking? Re-use the same prompt instead of stacking a second one.
+    if(pwPendingPromise)return pwPendingPromise;
+    $("pwError").textContent="";
+    $("pwInput1").value="";
+    $("pwDlgTitle").textContent="🔒 Admin Login";
+    $("pwDlgMsg").textContent="Enter the Admin password to continue.";
+    $("pwLabel1").textContent="Password";
+    $("pwInput1").placeholder="Password";
+    if(!$("pwDlg").open)$("pwDlg").showModal();
+    setTimeout(()=>$("pwInput1").focus(),50);
+    pwPendingPromise=new Promise(resolve=>{pwPendingResolve=resolve;});
+    return pwPendingPromise;
+  }
+  function closePwDlg(result){
+    if($("pwDlg").open)$("pwDlg").close();
+    pwChecking=false;
+    if(pwPendingResolve){pwPendingResolve(result);pwPendingResolve=null;}
+    pwPendingPromise=null;
+  }
+  $("pwCancel").onclick=()=>closePwDlg(false);
+  $("pwDlg").addEventListener("cancel",e=>{e.preventDefault();closePwDlg(false);});
+  async function submitPw(){
+    if(pwChecking)return; // guards double-fire (Enter key + click on mobile)
+    pwChecking=true;
+    const p1=$("pwInput1").value.trim();
+    const h=await sha256Hex(p1);
+    if(h!==ADMIN_PW_HASH){pwChecking=false;$("pwError").textContent="Incorrect password.";$("pwInput1").value="";$("pwInput1").focus();return;}
+    closePwDlg(true);
+  }
+  $("pwSubmit").onclick=e=>{e.preventDefault();submitPw();};
+  $("pwInput1").addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();submitPw();}});
+
+  // ---------- Admin / Viewer mode ----------
+  // Viewers can look at the register but can't edit anything. Logging in as Admin
+  // (same password as above) unlocks marking attendance, adding/editing/deleting
+  // workers, saving, and syncing.
+  // The session lives ONLY in memory for this one page load — it is never written to
+  // localStorage or sessionStorage. That means a page refresh, or closing the tab/site,
+  // always drops back to Viewer mode and Admin has to log in again. (An older version of
+  // this file persisted the login in localStorage/sessionStorage so it survived refreshes —
+  // that's what caused "logout doesn't stick after refresh". We also clean up any leftover
+  // value from that older version below, so it can't silently keep someone logged in.)
+  const ADMIN_SESSION_KEY="attendance.isAdminSession";
+  let adminSessionActive=false;
+  const isAdmin=()=>adminSessionActive;
+  function setAdminMode(v){
+    adminSessionActive=!!v;
+    try{localStorage.removeItem(ADMIN_SESSION_KEY);}catch(_){}
+    try{sessionStorage.removeItem(ADMIN_SESSION_KEY);}catch(_){}
+    document.body.classList.toggle("admin-mode",v);
+    $("adminLoginBtn").style.display=v?"none":"";
+    $("adminLogoutBtn").style.display=v?"":"none";
+    if(typeof fitColumns==="function")fitColumns();
+  }
+  function requireAdmin(actionMsg){
+    if(isAdmin())return true;
+    setStatus((actionMsg||"This action")+" needs Admin login.",true);
+    return false;
+  }
+  $("adminLoginBtn").onclick=async()=>{
+    if(isAdmin()){setAdminMode(true);return;}
+    const ok=await openPwDlg();
+    if(ok){setAdminMode(true);setStatus("Logged in as Admin ✓ You can now edit and mark attendance.");}
+  };
+  $("adminLogoutBtn").onclick=()=>{
+    if(confirm("Log out of Admin mode? You'll only be able to view the register until you log in again.")){
+      setAdminMode(false);
+      setStatus("Logged out — back to Viewer mode.");
+    }
+  };
+
+  // ---------- Department tabs (Lighting / Cabling keep separate workers + attendance) ----------
+  function updateDeptUI(){
+    $("mainTitle").textContent=deptLabel(dept)+" — Attendance Register";
+    $("addWorkerHeading").textContent="Add a "+deptLabel(dept).toLowerCase()+" worker (saved for every month)";
+  }
+  async function openDept(d){
+    dept=d;
+    try{localStorage.setItem(DK,dept);}catch(_){}
+    closeOtPopover();
+    editId=null;
+    if($("editDlg").open)$("editDlg").close();
+    updateDeptUI();
+    try{workers=JSON.parse(localStorage.getItem(WK()))||[];}catch(_){workers=[];}
+    try{att=JSON.parse(localStorage.getItem(aK(cycle)))||{};}catch(_){att={};}
+    workerFilter="";$("workerSearch").value="";
+    $("folderScreen").style.display="none";
+    $("registerScreen").style.display="block";
+    render();
+    setStatus("Opened "+deptLabel(dept)+" — "+cycleTitle(cycle)+".");
+    if(await pullFromSheet(dept,cycle))render();
+  }
+  function showFolders(){
+    closeOtPopover();
+    $("registerScreen").style.display="none";
+    $("folderScreen").style.display="block";
+  }
+  $("folderLighting").onclick=()=>openDept("lighting");
+  $("folderCabling").onclick=()=>openDept("cabling");
+  $("backToFoldersBtn").onclick=showFolders;
+
+  function defaultCycle(){const n=new Date();const m=n.getDate()>=26?n.getMonth()+1:n.getMonth();const d=new Date(n.getFullYear(),m,1);return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");}
+  function datesFor(c){const p=String(c||"").split("-").map(Number);if(p.length<2||!p[0]||!p[1])p[0]=new Date().getFullYear(),p[1]=new Date().getMonth()+1;const s=new Date(p[0],p[1]-2,26),e=new Date(p[0],p[1]-1,25),o=[];for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1))o.push(new Date(d));return o;}
+  function stats(id,rate){const r=att[id]||{};let p=0,a=0,l=0,h=0,otHours=0;
+    for(const k in r){
+      if(k.slice(-3)==="@ot"){otHours+=Number(r[k])||0;continue;}
+      if(r[k]==="P")p++;else if(r[k]==="A")a++;else if(r[k]==="L")l++;else if(r[k]==="H")h++;
+    }
+    return{present:p,absent:a,leave:l,holiday:h,otHours,total:p*(Number(rate)||0)};}
+  function saveWorkers(){
+    try{localStorage.setItem(WK(),JSON.stringify(workers));}
+    catch(err){console.error("Could not save workers to localStorage:",err);setStatus("Could not save — device storage is full or unavailable (e.g. private browsing).",true);}
+    queueSheetPush();
+  }
+  function saveAtt(){
+    try{localStorage.setItem(aK(cycle),JSON.stringify(att));}
+    catch(err){console.error("Could not save attendance to localStorage:",err);setStatus("Could not save — device storage is full or unavailable (e.g. private browsing).",true);}
+    queueSheetPush();
+  }
+
+  // Builds the same header/rows shape as the Excel export — reused for the
+  // human-readable tab that gets written into the Google Sheet.
+  function buildTable(){
+    const headers=["Sl.No.","Worker","Designation","Rate"].concat(dates.map(d=>d.getDate()+"-"+DOW[d.getDay()])).concat(["Present","Absent","Leave","Holiday","OT Hours","Total Pay"]);
+    const rows=workers.map((w,i)=>{
+      const s=stats(w.id,w.rate);
+      const row=[i+1,w.name,shiftLabel(w.desig),w.rate];
+      dates.forEach(d=>{const k=iso(d);const v=(att[w.id]&&att[w.id][k])||"";const ot=(att[w.id]&&att[w.id][k+"@ot"])||"";row.push(v+(ot?(" +"+ot+"h OT"):""));});
+      row.push(s.present,s.absent,s.leave,s.holiday,s.otHours,s.total);
+      return row;
+    });
+    return{headers,rows};
+  }
+
+  // ---- fit all date columns to the available width so scrolling isn't needed ----
+  function fitColumns(){
+    const wrap=$("tableWrap");
+    if(wrap.style.display==="none"||!dates.length)return;
+    const avail=wrap.clientWidth-4;
+    const fixed=150+110+64+ (4*26) + 34 + (isAdmin()?56:0); // worker+desig+rate + P/A/L/H count cols + OT hrs + actions (actions column is hidden for viewers)
+    let w=Math.floor((avail-fixed)/dates.length);
+    w=Math.max(16,Math.min(46,w));
+    document.documentElement.style.setProperty("--datecol",w+"px");
+    wrap.classList.toggle("narrow",w<30);
+  }
+  window.addEventListener("resize",fitColumns);
+
+  function render(){
+    // Marking a cell re-renders the whole table; without this the horizontal scroll jumped
+    // back to the first day on every tap, which made marking the end of the month painful.
+    const _wrap=$("tableWrap");
+    const _sl=_wrap?_wrap.scrollLeft:0, _st=_wrap?_wrap.scrollTop:0;
+    dates=datesFor(cycle);
+    $("cycleLabel").textContent=fmt(dates[0])+" — "+fmt(dates[dates.length-1]);
+    $("emptyState").style.display=workers.length?"none":"block";
+    $("tableWrap").style.display=workers.length?"block":"none";
+
+    let h='<th class="left">Worker</th><th class="left" style="white-space:normal;line-height:1.25">Designation<br>Shift</th><th style="text-align:right">Rate</th>';
+    dates.forEach(d=>{h+='<th class="date '+(d.getDay()===0?"sun":"")+'"><span>'+DOW[d.getDay()]+'</span>'+d.getDate()+'</th>';});
+    h+='<th class="cnt">P</th><th class="cnt">A</th><th class="cnt">L</th><th class="cnt">H</th><th class="otcnt">OT<span>hrs</span></th><th class="actioncol">Actions</th>';
+    $("headRow").innerHTML=h;
+
+    let rows="",gp=0,ga=0,gl=0,gh=0,gt=0,gOtH=0;
+    workers.forEach((w,i)=>{
+      // One malformed worker record (e.g. from a corrupted localStorage entry)
+      // used to be able to throw mid-loop and abort the whole
+      // render — leaving the table body empty while the totals row below kept
+      // showing stale numbers from the previous render. Skipping just that one
+      // record keeps everything else on screen and consistent.
+      try{
+        const s=stats(w.id,w.rate);gp+=s.present;ga+=s.absent;gl+=s.leave;gh+=s.holiday;gt+=s.total;gOtH+=s.otHours;
+        let c='<td class="left" title="'+esc(w.name)+'"><span style="color:var(--muted);font-size:11px">'+(i+1)+'.</span> <b>'+esc(w.name)+'</b></td>';
+        c+='<td class="left" style="color:var(--muted)">'+esc(shiftLabel(w.desig))+'</td>';
+        c+='<td class="rate">'+money(w.rate)+'</td>';
+        dates.forEach(d=>{const k=iso(d);const v=(att[w.id]&&att[w.id][k])||"";const ot=(att[w.id]&&att[w.id][k+"@ot"])||"";
+          c+='<td class="cell date" data-id="'+w.id+'" data-date="'+k+'"><div class="cell-inner"><span class="mark '+(v?v.toLowerCase():"n")+'">'+v+'</span><button type="button" class="ot-chip'+(ot?" set":"")+'" data-otid="'+w.id+'" data-otdate="'+k+'" title="Overtime hours">'+(ot?ot+"h":"")+'</button></div></td>';});
+        c+='<td class="cnt p">'+s.present+'</td><td class="cnt a">'+s.absent+'</td><td class="cnt l">'+s.leave+'</td><td class="cnt h">'+s.holiday+'</td>';
+        c+='<td class="otcnt">'+(s.otHours||"")+'</td>';
+        c+='<td class="actioncol" style="text-align:center"><button class="icon-btn" data-edit="'+w.id+'" title="Edit">✏️</button><button class="icon-btn danger" data-del="'+w.id+'" title="Delete">🗑</button></td>';
+        rows+='<tr data-search="'+esc((w.name+" "+w.desig+" "+shiftLabel(w.desig)).toLowerCase())+'">'+c+"</tr>";
+      }catch(err){
+        console.error("Skipped a worker row that failed to render:",w,err);
+      }
+    });
+    $("tbody").innerHTML=rows;
+    applyWorkerFilter();
+
+    let f='<td class="left">Total</td><td></td><td></td>';
+    dates.forEach(d=>{const k=iso(d);let n=0;workers.forEach(w=>{if(att[w.id]&&att[w.id][k]==="P")n++;});f+='<td class="date">'+(n||"")+"</td>";});
+    f+="<td>"+gp+"</td><td>"+ga+"</td><td>"+gl+"</td><td>"+gh+"</td><td>"+(gOtH||"")+"</td><td></td>";
+    $("footRow").innerHTML=f;
+
+    $("sWorkers").textContent=workers.length;$("sPresent").textContent=gp;$("sAbsent").textContent=ga;
+    $("sLeave").textContent=gl;$("sHoliday").textContent=gh;$("sOT").textContent=gOtH||0;
+
+    fitColumns();
+    if(_wrap){_wrap.scrollLeft=_sl;_wrap.scrollTop=_st;}
+  }
+
+  function applyWorkerFilter(){
+    const term=workerFilter.trim().toLowerCase();
+    let visible=0;
+    $("tbody").querySelectorAll("tr").forEach(tr=>{
+      const match=!term||(tr.dataset.search||"").includes(term);
+      tr.style.display=match?"":"none";
+      if(match)visible++;
+    });
+    let nr=$("noWorkerMatch");
+    if(term&&!visible&&workers.length){
+      if(!nr){
+        nr=document.createElement("div");nr.id="noWorkerMatch";
+        nr.style.cssText="padding:20px;text-align:center;color:var(--muted);font-size:13px";
+        nr.textContent="No workers match your search.";
+        $("tableWrap").after(nr);
+      }
+      nr.style.display="block";
+    }else if(nr){nr.style.display="none";}
+  }
+  $("workerSearch").addEventListener("input",e=>{workerFilter=e.target.value;applyWorkerFilter();});
+
+  $("addBtn").onclick=()=>{
+    if(!requireAdmin("Adding a worker"))return;
+    const n=$("nName").value.trim();if(!n){$("nName").focus();return;}
+    workers.push({id:Math.random().toString(36).slice(2,10),name:n,desig:$("nDesig").value.trim(),rate:Math.max(0,Number($("nRate").value)||0)});
+    $("nName").value="";$("nDesig").value="";$("nRate").value="";saveWorkers();render();$("nName").focus();
+  };
+  ["nName","nDesig","nRate"].forEach(id=>$(id).addEventListener("keydown",e=>{if(e.key==="Enter")$("addBtn").click();}));
+
+  $("tbody").addEventListener("click",e=>{
+    const otChip=e.target.closest(".ot-chip");
+    if(otChip){if(!requireAdmin("Logging overtime"))return;openOtPopover(otChip);return;}
+    const cell=e.target.closest(".cell");
+    if(cell){
+      if(!requireAdmin("Marking attendance"))return;
+      const id=cell.dataset.id,k=cell.dataset.date;att[id]=att[id]||{};
+      const cur=att[id][k]||"";const idx=STATES.indexOf(cur);const nx=idx===-1?STATES[0]:(idx===STATES.length-1?"":STATES[idx+1]);
+      if(nx)att[id][k]=nx;else delete att[id][k];saveAtt();render();return;}
+    const del=e.target.closest("[data-del]");
+    if(del){
+      if(!requireAdmin("Deleting a worker"))return;
+      const w=workers.find(x=>x.id===del.dataset.del);
+      if(!w)return;
+      if(confirm('Remove "'+w.name+'" from the register?')){workers=workers.filter(x=>x.id!==w.id);delete att[w.id];saveWorkers();saveAtt();render();}
+      return;}
+    const ed=e.target.closest("[data-edit]");
+    if(ed){
+      if(!requireAdmin("Editing a worker"))return;
+      const w=workers.find(x=>x.id===ed.dataset.edit);if(!w)return;
+      editId=w.id;$("eName").value=w.name;$("eDesig").value=w.desig;$("eRate").value=w.rate;$("editDlg").showModal();}
+  });
+
+  $("eCancel").onclick=()=>$("editDlg").close();
+  $("eSave").onclick=()=>{
+    if(!requireAdmin("Editing a worker"))return;
+    const w=workers.find(x=>x.id===editId);if(w){w.name=$("eName").value.trim()||w.name;w.desig=$("eDesig").value.trim();w.rate=Math.max(0,Number($("eRate").value)||0);saveWorkers();render();}
+    $("editDlg").close();
+  };
+
+  // ---------- OT (overtime) hours — tap the small chip under a mark to log hours for that day ----------
+  const OT_QUICK=[0.5,1,1.5,2,3,4];
+  let otTarget=null,otOpenedAt=0;
+  function openOtPopover(chip){
+    const id=chip.dataset.otid,date=chip.dataset.otdate;
+    otTarget={id,date};
+    otOpenedAt=Date.now();
+    const w=workers.find(x=>x.id===id);
+    $("otPopWorker").textContent=w?w.name:"";
+    $("otPopDate").textContent=fmt(new Date(date+"T00:00:00"));
+    const cur=Number((att[id]&&att[id][date+"@ot"])||0);
+    $("otHoursInput").value=cur;
+    $("otPopQuick").innerHTML=OT_QUICK.map(v=>'<button type="button" class="ot-chip-btn'+(cur===v?" active":"")+'" data-v="'+v+'">'+v+'h</button>').join("");
+    const pop=$("otPopover");
+    pop.style.display="block";
+    const r=chip.getBoundingClientRect();
+    const pw=pop.offsetWidth||232,ph=pop.offsetHeight||190;
+    let left=r.left+r.width/2-pw/2;
+    let top=r.bottom+8;
+    left=Math.max(8,Math.min(left,document.documentElement.clientWidth-pw-8));
+    if(top+ph>window.innerHeight-8)top=r.top-ph-8;
+    if(top<8)top=8;
+    pop.style.left=left+"px";pop.style.top=top+"px";
+  }
+  function closeOtPopover(){$("otPopover").style.display="none";otTarget=null;}
+  $("otPopClose").onclick=closeOtPopover;
+  $("otPopQuick").addEventListener("click",e=>{
+    const b=e.target.closest("[data-v]");if(!b)return;
+    $("otHoursInput").value=b.dataset.v;
+    $("otPopQuick").querySelectorAll(".ot-chip-btn").forEach(x=>x.classList.toggle("active",x===b));
+  });
+  $("otMinus").onclick=()=>{$("otHoursInput").value=Math.max(0,(Number($("otHoursInput").value)||0)-0.5);};
+  $("otPlus").onclick=()=>{$("otHoursInput").value=Math.min(24,(Number($("otHoursInput").value)||0)+0.5);};
+  $("otClearBtn").onclick=()=>{
+    if(!requireAdmin("Editing overtime"))return;
+    if(!otTarget)return;
+    const{id,date}=otTarget;
+    if(att[id])delete att[id][date+"@ot"];
+    saveAtt();closeOtPopover();render();
+  };
+  $("otSaveBtn").onclick=()=>{
+    if(!requireAdmin("Editing overtime"))return;
+    if(!otTarget)return;
+    const{id,date}=otTarget;
+    const val=Math.max(0,Math.min(24,Number($("otHoursInput").value)||0));
+    att[id]=att[id]||{};
+    if(val>0)att[id][date+"@ot"]=val;else delete att[id][date+"@ot"];
+    saveAtt();closeOtPopover();render();
+  };
+  document.addEventListener("click",e=>{
+    const pop=$("otPopover");
+    if(pop.style.display==="none")return;
+    if(pop.contains(e.target))return;
+    if(e.target.closest(".ot-chip"))return;
+    closeOtPopover();
+  });
+  window.addEventListener("resize",closeOtPopover);
+  window.addEventListener("scroll",()=>{if(Date.now()-otOpenedAt<400)return;if($("otPopover").style.display!=="none")closeOtPopover();},true);
+
+  // ---------- Year / Month dropdown selection ----------
+  const MONTHS=["January","February","March","April","May","June","July","August","September","October","November","December"];
+  function populateYearMonth(){
+    $("monthSelect").innerHTML=MONTHS.map((m,i)=>'<option value="'+String(i+1).padStart(2,"0")+'">'+m+'</option>').join("");
+    let yOpts="";
+    for(let y=2000;y<=2099;y++)yOpts+='<option value="'+y+'">'+y+'</option>';
+    $("yearSelect").innerHTML=yOpts;
+  }
+  function setSelectsFromCycle(){
+    const p=cycle.split("-");
+    $("yearSelect").value=p[0];
+    $("monthSelect").value=p[1];
+  }
+  async function onYearMonthChange(){
+    const y=$("yearSelect").value,m=$("monthSelect").value;
+    if(!y||!m)return;
+    closeOtPopover();
+    cycle=y+"-"+m;
+    try{att=JSON.parse(localStorage.getItem(aK(cycle)))||{};}catch(_){att={};}
+    workerFilter="";$("workerSearch").value="";
+    render();
+    setStatus("Viewing "+cycleTitle(cycle)+".");
+    if(await pullFromSheet(dept,cycle))render();
+  }
+  $("monthSelect").addEventListener("change",onYearMonthChange);
+  $("yearSelect").addEventListener("change",onYearMonthChange);
+
+  // ---------- Explicit Save (keeps full attendance stored inside the website itself, per month) ----------
+  $("saveBtn").onclick=()=>{
+    if(!requireAdmin("Saving"))return;
+    saveWorkers();
+    saveAtt();
+    setStatus("Saved");
+  };
+
+  function cycleTitle(c){const p=c.split("-").map(Number);return MONTHS[p[1]-1]+" "+p[0];}
+
+  // ---------- Export Excel (CSV — opens directly in Excel) ----------
+  function csvEscape(v){
+    v=String(v==null?"":v);
+    return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  }
+  $("excelBtn").onclick=()=>{
+    const t=buildTable();
+    const rows=[t.headers,...t.rows];
+    const csv=rows.map(r=>r.map(csvEscape).join(",")).join("\r\n");
+    const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download="Attendance_"+deptLabel(dept)+"_"+cycleTitle(cycle).replace(/\s+/g,"_")+".csv";
+    document.body.appendChild(a);a.click();a.remove();
+    URL.revokeObjectURL(url);
+    setStatus("Excel file exported for "+deptLabel(dept)+" — "+cycleTitle(cycle)+".");
+  };
+
+  setAdminMode(isAdmin());
+  updateDeptUI();
+  try{workers=JSON.parse(localStorage.getItem(WK()))||[];}catch(_){workers=[];}
+  cycle=defaultCycle();
+  populateYearMonth();
+  setSelectsFromCycle();
+  try{att=JSON.parse(localStorage.getItem(aK(cycle)))||{};}catch(_){att={};}
+  render();
+  refreshSyncBadgeIdle();
+  if(hasSheet())pullFromSheet(dept,cycle).then(applied=>{if(applied)render();});
+})();
+</script>
+</body>
+</html>
